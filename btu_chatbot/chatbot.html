@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>BTÜ Chatbot</title>
+    <style>
+        body {
+            font-family: "Segoe UI", sans-serif;
+            background: linear-gradient(to right, #e0f7fa, #e1f5fe);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+            animation: fadeIn 1s ease;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        header img {
+            height: 50px;
+        }
+
+        header h1 {
+            color: #0077c2;
+            font-size: 28px;
+            margin: 0;
+        }
+
+        #chat-container {
+            width: 90%;
+            max-width: 500px;
+            background-color: white;
+            padding: 15px;
+            border-radius: 16px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 15px;
+            line-height: 1.4;
+            animation: slideIn 0.3s ease;
+            word-wrap: break-word;
+        }
+
+        .user {
+            background-color: #e3f2fd;
+            align-self: flex-end;
+        }
+
+        .bot {
+            background-color: #bbdefb;
+            align-self: flex-start;
+        }
+
+        #bottom-area {
+            width: 90%;
+            max-width: 500px;
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        #question {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #90caf9;
+            border-radius: 10px;
+            font-size: 15px;
+        }
+
+        #askBtn {
+            background-color: #42a5f5;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+        }
+
+        #askBtn:hover {
+            background-color: #1e88e5;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- LOGO + BAŞLIK -->
+    <header>
+        <img src="btu_logo.png" alt="BTÜ Logosu">
+        <h1>BTÜ Chatbot</h1>
+    </header>
+
+    <!-- CEVAP KONTEYNERİ -->
+    <div id="chat-container"></div>
+
+    <!-- SORU ALANI -->
+    <div id="bottom-area">
+        <input type="text" id="question" placeholder="Sorunu yaz...">
+        <button id="askBtn">Sor</button>
+    </div>
+
+    <script>
+        document.getElementById("askBtn").addEventListener("click", async () => {
+            const question = document.getElementById("question").value.trim();
+            if (!question) return;
+
+            addMessage(question, "user");
+
+            const response = await fetch("http://127.0.0.1:5000/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ question })
+            });
+
+            const data = await response.json();
+            addMessage(data.answer, "bot");
+
+            document.getElementById("question").value = "";
+        });
+
+        function addMessage(text, sender) {
+            const chatContainer = document.getElementById("chat-container");
+            const message = document.createElement("div");
+            message.className = `message ${sender}`;
+            message.textContent = text;
+            chatContainer.appendChild(message);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
