@@ -19,6 +19,7 @@ class Config:
     CHUNK_OVERLAP = 75  # Daha fazla örtüşme
     CACHE_DURATION_HOURS = 24
     MAX_CONTEXT_LENGTH = 6000  # Gemini prompt limiti için
+    PDF_FILE_PATH = "document.pdf"  # Sabit PDF dosyası yolu
 
 class PDFChatbot:
     def __init__(self):
@@ -27,6 +28,7 @@ class PDFChatbot:
         self.chunks = []
         self.cache = {}
         self.cache_file = "chatbot_cache.pkl"
+        self.pdf_processed = False
         self.load_cache()
         
         # Gemini yapılandırması
@@ -57,17 +59,24 @@ class PDFChatbot:
         except Exception as e:
             print(f"Cache kaydetme hatası: {e}")
     
-    def get_pdf_hash(self, pdf_content: bytes) -> str:
-        """PDF içeriğinin hash'ini al"""
-        return hashlib.md5(pdf_content).hexdigest()
+    def get_pdf_hash(self, pdf_path: str) -> str:
+        """PDF dosyasının hash'ini al"""
+        try:
+            with open(pdf_path, 'rb') as f:
+                pdf_content = f.read()
+            return hashlib.md5(pdf_content).hexdigest()
+        except Exception as e:
+            print(f"PDF hash alma hatası: {e}")
+            return ""
     
-    def extract_text_from_pdf(self, pdf_file) -> str:
+    def extract_text_from_pdf(self, pdf_path: str) -> str:
         """PDF'den metin çıkar"""
         try:
-            pdf_reader = PdfReader(pdf_file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
+            with open(pdf_path, 'rb') as file:
+                pdf_reader = PdfReader(file)
+                text = ""
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
             return text
         except Exception as e:
             st.error(f"PDF okuma hatası: {e}")
@@ -132,7 +141,7 @@ class PDFChatbot:
         self.initialize_embeddings()
         
         # Embedding'leri oluştur
-        embeddings = self.embedding_model.encode(chunks, show_progress_bar=True)
+        embeddings = self.embedding_model.encode(chunks, show_progress_bar=False)
         embeddings = embeddings.astype('float32')
         
         # FAISS index oluştur
@@ -145,24 +154,33 @@ class PDFChatbot:
         
         return index
     
-    def process_pdf(self, pdf_file):
-        """PDF'i işle ve vektör veritabanını oluştur"""
+    def load_and_process_pdf(self):
+        """Sabit PDF dosyasını yükle ve işle"""
+        pdf_path = Config.PDF_FILE_PATH
+        
+        # PDF dosyası var mı kontrol et
+        if not os.path.exists(pdf_path):
+            st.error(f"PDF dosyası bulunamadı: {pdf_path}")
+            st.info("Lütfen 'document.pdf' adlı dosyayı uygulama klasörüne ekleyin.")
+            return False
+        
         # PDF hash'ini kontrol et
-        pdf_content = pdf_file.read()
-        pdf_file.seek(0)  # Dosya pointer'ını başa al
-        pdf_hash = self.get_pdf_hash(pdf_content)
+        pdf_hash = self.get_pdf_hash(pdf_path)
+        if not pdf_hash:
+            return False
         
         # Cache'de var mı kontrol et
         if pdf_hash in self.cache:
             cached_data = self.cache[pdf_hash]
-            self.chunks = cached_data['chunks']
-            self.vector_store = cached_data['vector_store']
-            st.success("PDF cache'den yüklendi!")
-            return True
+            if 'chunks' in cached_data and 'vector_store' in cached_data:
+                self.chunks = cached_data['chunks']
+                self.vector_store = cached_data['vector_store']
+                self.pdf_processed = True
+                return True
         
         # PDF'i işle
         with st.spinner("PDF işleniyor..."):
-            text = self.extract_text_from_pdf(pdf_file)
+            text = self.extract_text_from_pdf(pdf_path)
             
             if not text.strip():
                 st.error("PDF'den metin çıkarılamadı!")
@@ -186,7 +204,7 @@ class PDFChatbot:
             }
             self.save_cache()
             
-            st.success(f"PDF başarıyla işlendi! {len(self.chunks)} parça oluşturuldu.")
+            self.pdf_processed = True
             return True
     
     def semantic_search(self, query: str, k: int = 8) -> List[Dict]:
@@ -331,8 +349,8 @@ class PDFChatbot:
     
     def chat(self, question: str) -> str:
         """Gelişmiş chat fonksiyonu"""
-        if not self.vector_store or not self.chunks:
-            return "Lütfen önce bir PDF dosyası yükleyin."
+        if not self.pdf_processed or not self.vector_store or not self.chunks:
+            return "PDF henüz işlenmedi. Lütfen uygulamayı yeniden başlatın."
         
         # Semantic search - daha fazla sonuç al
         relevant_results = self.semantic_search(question, k=8)
@@ -385,29 +403,24 @@ def main():
     )
     
     st.title("📚 PDF Chatbot")
-    st.markdown("PDF belgelerinizi yükleyin ve içeriği hakkında sorular sorun!")
+    st.markdown("Belgenizdeki içerik hakkında sorular sorun!")
     
     # Chatbot'u session state'de sakla
     if 'chatbot' not in st.session_state:
         st.session_state.chatbot = PDFChatbot()
-    
-    # Sidebar - PDF yükleme
-    with st.sidebar:
-        st.header("📄 PDF Yükle")
-        uploaded_file = st.file_uploader(
-            "PDF dosyanızı seçin",
-            type=['pdf'],
-            help="PDF dosyanızı buraya sürükleyin veya seçin"
-        )
         
-        if uploaded_file is not None:
-            if st.button("PDF'i İşle", type="primary"):
-                success = st.session_state.chatbot.process_pdf(uploaded_file)
-                if success:
-                    st.session_state.pdf_processed = True
+    # PDF'i otomatik yükle (sadece bir kez)
+    if 'pdf_loaded' not in st.session_state:
+        with st.spinner("PDF yükleniyor..."):
+            success = st.session_state.chatbot.load_and_process_pdf()
+            if success:
+                st.session_state.pdf_loaded = True
+                st.success(f"✅ PDF başarıyla yüklendi! {len(st.session_state.chatbot.chunks)} parça işlendi.")
+            else:
+                st.session_state.pdf_loaded = False
     
     # Ana alan - Chat interface
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([3, 1])
     
     with col1:
         st.header("💬 Sohbet")
@@ -427,8 +440,8 @@ def main():
                     st.write(answer)
         
         # Soru sorma
-        if hasattr(st.session_state, 'pdf_processed') and st.session_state.pdf_processed:
-            question = st.chat_input("PDF'iniz hakkında bir soru sorun...")
+        if st.session_state.get('pdf_loaded', False):
+            question = st.chat_input("Belgeniz hakkında bir soru sorun...")
             
             if question:
                 with st.chat_message("user"):
@@ -442,22 +455,24 @@ def main():
                 # Chat geçmişine ekle
                 st.session_state.chat_history.append((question, answer))
         else:
-            st.info("Soru sormaya başlamak için lütfen bir PDF dosyası yükleyin ve işleyin.")
+            st.error("PDF yüklenemedi. Lütfen 'document.pdf' dosyasının uygulama klasöründe olduğundan emin olun.")
     
     with col2:
-        st.header("ℹ️ Bilgi")
+        st.header("ℹ️ Durum")
         
-        if hasattr(st.session_state, 'pdf_processed') and st.session_state.pdf_processed:
-            st.success("✅ PDF başarıyla yüklendi")
-            st.info(f"📊 {len(st.session_state.chatbot.chunks)} metin parçası oluşturuldu")
+        if st.session_state.get('pdf_loaded', False):
+            st.success("✅ PDF yüklendi")
+            st.info(f"📊 {len(st.session_state.chatbot.chunks)} metin parçası")
+            st.info(f"📄 Dosya: {Config.PDF_FILE_PATH}")
         else:
-            st.warning("⏳ PDF bekleniyor")
+            st.error("❌ PDF yüklenemedi")
+            st.warning(f"⚠️ '{Config.PDF_FILE_PATH}' dosyası bulunamadı")
         
         st.markdown("---")
         st.markdown("**💡 Kullanım İpuçları:**")
         st.markdown("• Açık ve spesifik sorular sorun")
         st.markdown("• PDF'inizin dilinde soru sorun")
-        st.markdown("• Uzun belgeler için sabırlı olun")
+        st.markdown("• Belgedeki anahtar kelimeleri kullanın")
         
         # Debug modu toggle
         if st.checkbox("🔍 Debug Modu", help="Arama detaylarını göster"):
@@ -468,9 +483,15 @@ def main():
         # Cache temizleme
         if st.button("🗑️ Cache Temizle"):
             if os.path.exists(st.session_state.chatbot.cache_file):
-                os.remove(st.session_state.chatbot.cache_file)
+                os.remove(st.session_state.cache_file)
             st.session_state.chatbot.cache = {}
             st.success("Cache temizlendi!")
+        
+        # PDF yeniden yükleme
+        if st.button("🔄 PDF'i Yeniden Yükle"):
+            if 'pdf_loaded' in st.session_state:
+                del st.session_state['pdf_loaded']
+            st.rerun()
 
 if __name__ == "__main__":
     main()
