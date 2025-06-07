@@ -19,7 +19,7 @@ BTÜ Chatbot, Bursa Teknik Üniversitesi öğrenci rehberinden bilgi alarak öğ
 - SentenceTransformer
 - HTML/CSS frontend
 
-## 🔧 Kurulum ve Çalıştırma
+##  Kurulum ve Çalıştırma
 
 1. **Gerekli kütüphaneleri yükleyin:**
 
@@ -32,4 +32,6 @@ BTÜ Chatbot, Bursa Teknik Üniversitesi öğrenci rehberinden bilgi alarak öğ
    
 3. **Sunucuyu başlatın:**
    ```bash
-   app.py   
+   app.py
+   
+##  Katkıda Bulunanlar   
